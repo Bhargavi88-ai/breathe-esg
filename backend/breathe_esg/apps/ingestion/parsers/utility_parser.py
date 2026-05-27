@@ -1,120 +1,31 @@
 """
 Utility portal CSV parser — Scope 2 electricity.
-
-Choice justification (see DECISIONS.md):
-We chose CSV portal export as the ingestion mode because:
-  1. The majority of utility companies in India, UK, and US provide a
-     "Download billing history" CSV from their portal (e.g., BESCOM, British Gas,
-     Con Edison, PG&E). This requires no integration work on the client side.
-  2. Utility APIs exist (e.g., Green Button / ESPI in the US, some BESCOM APIs)
-     but are inconsistently implemented and often require utility-by-utility OAuth
-     approval — not feasible for an enterprise with sites across multiple utilities.
-  3. PDF bill parsing is possible (pdfplumber) but extremely brittle per-utility;
-     CSV is far more stable.
-
-Real-world utility CSV shapes researched:
-  - BESCOM (Bangalore): Account No, Bill Month, Units Consumed (kWh),
-    Bill Amount, Due Date — no demand charges broken out
-  - PG&E (US): Start Date, End Date, Usage (kWh), Cost, Meter Number
-  - British Gas (UK): Period Start, Period End, Gas Volume (m3),
-    Electricity kWh, Tariff Rate
-  - Con Edison (US): Invoice Date, Service Period Start/End,
-    Electricity (kWh), Demand (kW), Amount Due
-
-Common gotchas:
-  - Billing periods don't align with calendar months (e.g. 17 Mar – 16 Apr)
-  - Multi-meter accounts: one file has multiple meter_id rows
-  - Units can be kWh, MWh, or even "units" (India, where 1 unit = 1 kWh)
-  - Tariff structure (TOD, slab) is in the bill but we only care about kWh
+Uses Python's built-in csv module instead of pandas.
 """
 
+import csv
 import hashlib
 import io
-from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import Optional
 
-import pandas as pd
-
-
-# Canonical column map — handles the most common utility portal variants
 COLUMN_ALIASES = {
-    # Start of billing period
-    "start_date": "period_start",
-    "Start Date": "period_start",
-    "Service Period Start": "period_start",
-    "Period Start": "period_start",
-    "Bill Month": "period_start",
-    "Billing Period Start": "period_start",
-    "From": "period_start",
-
-    # End of billing period
-    "end_date": "period_end",
-    "End Date": "period_end",
-    "Service Period End": "period_end",
-    "Period End": "period_end",
-    "To": "period_end",
-    "Billing Period End": "period_end",
-
-    # Consumption
-    "Usage (kWh)": "kwh",
-    "Electricity (kWh)": "kwh",
-    "Units Consumed": "kwh",
-    "units_consumed": "kwh",
-    "kwh": "kwh",
-    "kWh": "kwh",
-    "usage_kwh": "kwh",
-    "Consumption kWh": "kwh",
-
-    # Meter
-    "Meter Number": "meter_id",
-    "Meter No": "meter_id",
-    "Account No": "meter_id",
-    "meter_id": "meter_id",
-
-    # Site / facility
-    "Site": "facility",
-    "Location": "facility",
-    "Address": "facility",
-    "Facility": "facility",
-
-    # Cost (informational, not used for emissions)
-    "Cost": "cost",
-    "Amount Due": "cost",
-    "Bill Amount": "cost",
+    "start_date": "period_start", "Start Date": "period_start",
+    "Service Period Start": "period_start", "Period Start": "period_start",
+    "Bill Month": "period_start", "Billing Period Start": "period_start", "From": "period_start",
+    "end_date": "period_end", "End Date": "period_end",
+    "Service Period End": "period_end", "Period End": "period_end",
+    "To": "period_end", "Billing Period End": "period_end",
+    "Usage (kWh)": "kwh", "Electricity (kWh)": "kwh", "Units Consumed": "kwh",
+    "units_consumed": "kwh", "kwh": "kwh", "kWh": "kwh",
+    "usage_kwh": "kwh", "Consumption kWh": "kwh",
+    "Meter Number": "meter_id", "Meter No": "meter_id",
+    "Account No": "meter_id", "meter_id": "meter_id",
+    "Site": "facility", "Location": "facility",
+    "Address": "facility", "Facility": "facility",
+    "Cost": "cost", "Amount Due": "cost", "Bill Amount": "cost",
 }
 
-
-def parse_utility_date(val: str) -> Optional[date]:
-    val = str(val).strip()
-    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y", "%d-%m-%Y",
-                "%b %Y", "%B %Y", "%Y%m", "%b-%Y"):
-        try:
-            from datetime import datetime
-            d = datetime.strptime(val, fmt)
-            # If only month/year, use first of month
-            return d.date()
-        except (ValueError, TypeError):
-            continue
-    return None
-
-
-def kwh_from_value(val: str) -> Optional[Decimal]:
-    """Parse kWh value — handle commas, spaces, 'MWh' labels."""
-    val = str(val).strip().replace(",", "").replace(" ", "")
-    # Strip any unit suffixes
-    for suffix in ["kwh", "mwh", "kw", "units"]:
-        if val.lower().endswith(suffix):
-            val = val[: -len(suffix)].strip()
-            break
-    try:
-        d = Decimal(val)
-        return d
-    except InvalidOperation:
-        return None
-
-
-# Emission factor keys by country — the analyst can override
 COUNTRY_EF_MAP = {
     "IN": "electricity_kwh_in",
     "UK": "electricity_kwh_uk",
@@ -123,9 +34,31 @@ COUNTRY_EF_MAP = {
 }
 
 
-def process_utility_batch(file_obj, batch, organisation, reporting_year, emission_factors, country_code="IN"):
-    from breathe_esg.apps.emissions.models import EmissionRecord
+def parse_utility_date(val):
+    val = str(val).strip()
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y", "%d-%m-%Y",
+                "%b %Y", "%B %Y", "%Y%m", "%b-%Y"):
+        try:
+            from datetime import datetime
+            return datetime.strptime(val, fmt).date()
+        except (ValueError, TypeError):
+            continue
+    return None
 
+
+def kwh_from_value(val):
+    val = str(val).strip().replace(",", "").replace(" ", "")
+    for suffix in ["kwh", "mwh", "kw", "units"]:
+        if val.lower().endswith(suffix):
+            val = val[:-len(suffix)].strip()
+            break
+    try:
+        return Decimal(val)
+    except InvalidOperation:
+        return None
+
+
+def read_csv_file(file_obj):
     raw = file_obj.read()
     for enc in ["utf-8-sig", "utf-8", "latin-1"]:
         try:
@@ -134,30 +67,38 @@ def process_utility_batch(file_obj, batch, organisation, reporting_year, emissio
         except UnicodeDecodeError:
             continue
     else:
-        return [], [{"row_index": None, "raw_data": "", "error_message": "Cannot decode file encoding."}]
+        raise ValueError("Cannot decode file encoding.")
 
-    # Try CSV
-    df = None
     for sep in [",", ";", "\t"]:
         try:
-            candidate = pd.read_csv(io.StringIO(content), sep=sep, dtype=str, keep_default_na=False)
-            if len(candidate.columns) >= 2:
-                df = candidate
-                break
+            reader = csv.DictReader(io.StringIO(content), delimiter=sep)
+            rows = list(reader)
+            if rows and len(rows[0]) >= 2:
+                return rows
         except Exception:
             continue
+    raise ValueError("Cannot parse file as CSV.")
 
-    if df is None:
-        return [], [{"row_index": None, "raw_data": "", "error_message": "Cannot parse file as CSV."}]
 
-    # Normalise column names
-    df.rename(columns={c: COLUMN_ALIASES.get(c, c) for c in df.columns}, inplace=True)
+def process_utility_batch(file_obj, batch, organisation, reporting_year, emission_factors, country_code="IN"):
+    from breathe_esg.apps.emissions.models import EmissionRecord
 
-    if "kwh" not in df.columns:
+    try:
+        raw_rows = read_csv_file(file_obj)
+    except ValueError as e:
+        return [], [{"row_index": None, "raw_data": "", "error_message": str(e)}]
+
+    def normalise_row(row):
+        return {COLUMN_ALIASES.get(k, k): v for k, v in row.items()}
+
+    rows = [normalise_row(r) for r in raw_rows]
+
+    if not rows or "kwh" not in rows[0]:
+        cols = list(rows[0].keys()) if rows else []
         return [], [{
             "row_index": None,
-            "raw_data": str(list(df.columns)),
-            "error_message": f"No kWh column found. Detected columns: {list(df.columns)}",
+            "raw_data": str(cols),
+            "error_message": f"No kWh column found. Detected columns: {cols}",
         }]
 
     ef_key = COUNTRY_EF_MAP.get(country_code.upper(), "electricity_kwh_in")
@@ -166,10 +107,8 @@ def process_utility_batch(file_obj, batch, organisation, reporting_year, emissio
     successes = []
     errors = []
 
-    for idx, row in df.iterrows():
-        row_dict = row.to_dict()
+    for idx, row_dict in enumerate(rows):
         raw_repr = str(row_dict)
-
         try:
             kwh = kwh_from_value(row_dict.get("kwh", ""))
             if kwh is None:
@@ -181,10 +120,8 @@ def process_utility_batch(file_obj, batch, organisation, reporting_year, emissio
             period_end = parse_utility_date(row_dict.get("period_end", ""))
             meter_id = str(row_dict.get("meter_id", "")).strip()
             facility = str(row_dict.get("facility", "")).strip()
-
             kg_co2e = kwh * ef_value
 
-            # Hash for dedup: meter + period + kwh
             hash_input = f"{meter_id}{row_dict.get('period_start','')}{kwh}"
             row_hash = hashlib.sha256(hash_input.encode()).hexdigest()
 
