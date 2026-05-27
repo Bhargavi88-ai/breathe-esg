@@ -1,0 +1,22 @@
+travel_type,traveler_email,travel_date,origin_iata,destination_iata,cabin_class,distance_km,hotel_nights,hotel_city
+flight,ceo@acme.com,2024-01-10,BLR,LHR,Business,,,
+flight,vp.sales@acme.com,2024-01-15,DEL,JFK,Economy,,,
+flight,cfo@acme.com,2024-02-05,BLR,DEL,Economy,,,
+flight,director.ops@acme.com,2024-02-18,BOM,DXB,Business,,,
+flight,analyst@acme.com,2024-03-01,BLR,BOM,Economy,,,
+flight,ceo@acme.com,2024-03-20,BLR,SIN,Business,,,
+flight,vp.sales@acme.com,2024-04-08,DEL,CDG,Economy,,,
+flight,cfo@acme.com,2024-04-22,BOM,FRA,Business,,,
+flight,analyst@acme.com,2024-05-05,BLR,HYD,Economy,,,
+flight,director.ops@acme.com,2024-05-18,MAA,DEL,Economy,,,
+hotel,ceo@acme.com,2024-01-10,,,,,3,London
+hotel,vp.sales@acme.com,2024-01-15,,,,,5,New York
+hotel,cfo@acme.com,2024-02-05,,,,,1,Delhi
+hotel,director.ops@acme.com,2024-02-18,,,,,2,Dubai
+hotel,ceo@acme.com,2024-03-20,,,,,4,Singapore
+hotel,vp.sales@acme.com,2024-04-08,,,,,3,Paris
+hotel,cfo@acme.com,2024-04-22,,,,,2,Frankfurt
+taxi,analyst@acme.com,2024-03-01,,,,,, 
+taxi,ceo@acme.com,2024-01-10,,,,,, 
+car rental,vp.sales@acme.com,2024-01-16,,,,45,, 
+taxi,director.ops@acme.com,2024-02-19,,,,18,, 
