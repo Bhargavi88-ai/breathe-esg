@@ -1,6 +1,6 @@
 import axios from "axios";
 
-baseURL: https://breathe-esg-enai.onrender.com/api/v1
+const BASE_URL = process.env.REACT_APP_API_URL + "/api";
 
 const api = axios.create({
   baseURL: BASE_URL,
